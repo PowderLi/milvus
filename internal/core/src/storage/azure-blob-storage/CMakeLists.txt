@@ -27,3 +27,4 @@ target_link_libraries(blob-chunk-manager PRIVATE Azure::azure-identity Azure::az
 
 install(TARGETS blob-chunk-manager DESTINATION "${CMAKE_INSTALL_LIBDIR}")
 
+add_subdirectory(test)

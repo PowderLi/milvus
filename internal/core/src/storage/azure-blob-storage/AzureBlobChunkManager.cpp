@@ -16,6 +16,7 @@
 
 #include <iostream>
 #include <sstream>
+#include <azure/core/diagnostics/logger.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
 #include "AzureBlobChunkManager.h"
 
@@ -46,6 +47,25 @@ GetConnectionString(const std::string& access_key_id,
     }
     return "DefaultEndpointsProtocol=https;AccountName=" + access_key_id +
            ";AccountKey=" + access_key_value + ";EndpointSuffix=" + address;
+}
+
+void AzureBlobChunkManager::InitLog(std::string level_str, void (*func)(std::string msg)) {
+    Azure::Core::Diagnostics::Logger::Level level = Azure::Core::Diagnostics::Logger::Level::Verbose;
+    if (level_str == "fatal" || level_str == "error") {
+        level = Azure::Core::Diagnostics::Logger::Level::Error;
+    } else if (level_str == "warn") {
+        level = Azure::Core::Diagnostics::Logger::Level::Warning;
+    } else if (level_str == "info") {
+        level = Azure::Core::Diagnostics::Logger::Level::Informational;
+    } else if (level_str == "debug" || level_str == "trace") {
+        level = Azure::Core::Diagnostics::Logger::Level::Verbose;
+    }
+
+    // See above for the level descriptions.
+    Azure::Core::Diagnostics::Logger::SetLevel(level);
+
+    // SetListener accepts std::function<>, which can be either lambda or a function pointer.
+    Azure::Core::Diagnostics::Logger::SetListener([&](auto lvl, auto msg){ func(msg); });
 }
 
 AzureBlobChunkManager::AzureBlobChunkManager(

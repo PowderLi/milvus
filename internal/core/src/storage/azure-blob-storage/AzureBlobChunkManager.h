@@ -21,7 +21,7 @@
 #include <stdlib.h>
 #include <string>
 #include <vector>
-#include "azure/storage/common/storage_exception.hpp"
+#include <azure/storage/common/storage_exception.hpp>
 
 namespace azure {
 /**
@@ -29,6 +29,8 @@ namespace azure {
    */
 class AzureBlobChunkManager {
  public:
+
+    static void InitLog(std::string level_string, void (*func)(std::string msg));
     explicit AzureBlobChunkManager(const std::string& access_key_id,
                                    const std::string& access_key_value,
                                    const std::string& address,
