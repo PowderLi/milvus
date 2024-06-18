@@ -13,6 +13,8 @@ from requests.exceptions import ConnectionError
 def logger_request_response(response, url, tt, headers, data, str_data, str_response, method):
     if len(data) > 2000:
         data = data[:1000] + "..." + data[-1000:]
+    print(f"\ncurl --location --request {method} \'{url}\'\n--header \"{headers}\"\n--data-raw\n\'{data}\'\n")
+    if len(response.text) < 200: print(f"{response.text}\n")
     try:
         if response.status_code == 200:
             if ('code' in response.json() and response.json()["code"] == 0) or (
