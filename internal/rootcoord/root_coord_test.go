@@ -36,6 +36,7 @@ import (
 	"github.com/milvus-io/milvus/internal/proto/etcdpb"
 	"github.com/milvus-io/milvus/internal/proto/internalpb"
 	"github.com/milvus-io/milvus/internal/proto/proxypb"
+	"github.com/milvus-io/milvus/internal/proto/querypb"
 	"github.com/milvus-io/milvus/internal/proto/rootcoordpb"
 	mockrootcoord "github.com/milvus-io/milvus/internal/rootcoord/mocks"
 	"github.com/milvus-io/milvus/internal/util/dependency"
@@ -2070,4 +2071,255 @@ func (s *RootCoordSuite) TestRestore() {
 
 func TestRootCoordSuite(t *testing.T) {
 	suite.Run(t, new(RootCoordSuite))
+}
+
+func TestRootCoord_TruncateCollection(t *testing.T) {
+	t.Run("not healthy", func(t *testing.T) {
+		c := newTestCore(withAbnormalCode())
+		ctx := context.Background()
+		resp, err := c.TruncateCollection(ctx, &milvuspb.DropCollectionRequest{})
+		assert.NoError(t, err)
+		assert.NotEqual(t, commonpb.ErrorCode_Success, resp.GetErrorCode())
+	})
+	t.Run("add copy task fail", func(t *testing.T) {
+		c := newTestCore(withHealthyCode(), withInvalidScheduler())
+		ctx := context.Background()
+		resp, err := c.TruncateCollection(ctx, &milvuspb.DropCollectionRequest{})
+		assert.NoError(t, err)
+		assert.NotEqual(t, commonpb.ErrorCode_Success, resp.GetErrorCode())
+	})
+	t.Run("execute copy task fail", func(t *testing.T) {
+		c := newTestCore(withHealthyCode(), withTaskFailScheduler())
+		ctx := context.Background()
+		resp, err := c.TruncateCollection(ctx, &milvuspb.DropCollectionRequest{})
+		assert.NoError(t, err)
+		assert.NotEqual(t, commonpb.ErrorCode_Success, resp.GetErrorCode())
+	})
+	t.Run("invalid dataCoord", func(t *testing.T) {
+		sched := newMockScheduler()
+		sched.AddTaskFunc = func(t task) error {
+			switch ct := t.(type) {
+			case *markCollectionTask:
+				if ct.fromState == etcdpb.CollectionState_CollectionCreated {
+					t.NotifyDone(nil)
+					return nil
+				} else {
+					return errors.New("mock error")
+				}
+			case *createCollectionTask:
+				return errors.New("mock error")
+			}
+			return errors.New("error mock AddTask")
+		}
+		c := newTestCore(withHealthyCode(), withScheduler(sched))
+		ctx := context.Background()
+		resp, err := c.TruncateCollection(ctx, &milvuspb.DropCollectionRequest{})
+		assert.NoError(t, err)
+		assert.NotEqual(t, commonpb.ErrorCode_Success, resp.GetErrorCode())
+	})
+	t.Run("invalid dataCoord", func(t *testing.T) {
+		sched := newMockScheduler()
+		sched.AddTaskFunc = func(t task) error {
+			switch ct := t.(type) {
+			case *markCollectionTask:
+				if ct.fromState == etcdpb.CollectionState_CollectionCreated {
+					t.NotifyDone(nil)
+				} else {
+					t.NotifyDone(errors.New("mock error"))
+				}
+				return nil
+			case *createCollectionTask:
+				return errors.New("mock error")
+			}
+			return errors.New("error mock AddTask")
+		}
+		c := newTestCore(withHealthyCode(), withScheduler(sched))
+		ctx := context.Background()
+		resp, err := c.TruncateCollection(ctx, &milvuspb.DropCollectionRequest{})
+		assert.NoError(t, err)
+		assert.NotEqual(t, commonpb.ErrorCode_Success, resp.GetErrorCode())
+	})
+	t.Run("invalid dataCoord", func(t *testing.T) {
+		sched := newMockScheduler()
+		sched.AddTaskFunc = func(t task) error {
+			switch t.(type) {
+			case *markCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			case *createCollectionTask:
+				t.NotifyDone(errors.New("mock error"))
+				return nil
+			}
+			return errors.New("error mock AddTask")
+		}
+		c := newTestCore(withHealthyCode(), withScheduler(sched))
+		ctx := context.Background()
+		resp, err := c.TruncateCollection(ctx, &milvuspb.DropCollectionRequest{})
+		assert.NoError(t, err)
+		assert.NotEqual(t, commonpb.ErrorCode_Success, resp.GetErrorCode())
+	})
+	t.Run("invalid dataCoord", func(t *testing.T) {
+		sched := newMockScheduler()
+		sched.AddTaskFunc = func(t task) error {
+			switch t.(type) {
+			case *markCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			case *createCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			case *dropCollectionTask:
+				return errors.New("mock error")
+			}
+			return errors.New("error mock AddTask")
+		}
+		c := newTestCore(withHealthyCode(), withScheduler(sched), withInvalidDataCoord())
+		ctx := context.Background()
+		resp, err := c.TruncateCollection(ctx, &milvuspb.DropCollectionRequest{})
+		assert.NoError(t, err)
+		assert.NotEqual(t, commonpb.ErrorCode_Success, resp.GetErrorCode())
+	})
+	t.Run("invalid dataCoord", func(t *testing.T) {
+		sched := newMockScheduler()
+		sched.AddTaskFunc = func(t task) error {
+			switch t.(type) {
+			case *markCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			case *createCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			case *dropCollectionTask:
+				t.NotifyDone(errors.New("mock errors"))
+				return nil
+			}
+			return errors.New("error mock AddTask")
+		}
+		c := newTestCore(withHealthyCode(), withScheduler(sched), withInvalidDataCoord())
+		ctx := context.Background()
+		resp, err := c.TruncateCollection(ctx, &milvuspb.DropCollectionRequest{})
+		assert.NoError(t, err)
+		assert.NotEqual(t, commonpb.ErrorCode_Success, resp.GetErrorCode())
+	})
+	t.Run("invalid dataCoord", func(t *testing.T) {
+		sched := newMockScheduler()
+		sched.AddTaskFunc = func(t task) error {
+			switch t.(type) {
+			case *markCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			case *createCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			case *dropCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			}
+			return errors.New("error mock AddTask")
+		}
+		c := newTestCore(withHealthyCode(), withScheduler(sched), withValidDataCoord(), withInvalidQueryCoord())
+		ctx := context.Background()
+		resp, err := c.TruncateCollection(ctx, &milvuspb.DropCollectionRequest{})
+		assert.NoError(t, err)
+		assert.NotEqual(t, commonpb.ErrorCode_Success, resp.GetErrorCode())
+	})
+	qc := mocks.NewMockQueryCoordClient(t)
+	qc.EXPECT().ShowCollections(mock.Anything, mock.Anything).Return(&querypb.ShowCollectionsResponse{}, nil)
+	qc.EXPECT().LoadCollection(mock.Anything, mock.Anything).Return(&commonpb.Status{Code: int32(commonpb.ErrorCode_CollectionNotExists)}, nil)
+	t.Run("invalid dataCoord", func(t *testing.T) {
+		sched := newMockScheduler()
+		sched.AddTaskFunc = func(t task) error {
+			switch t.(type) {
+			case *markCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			case *createCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			case *dropCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			}
+			return errors.New("error mock AddTask")
+		}
+		c := newTestCore(withHealthyCode(), withScheduler(sched), withValidDataCoord(), withQueryCoord(qc))
+		ctx := context.Background()
+		resp, err := c.TruncateCollection(ctx, &milvuspb.DropCollectionRequest{})
+		assert.NoError(t, err)
+		assert.NotEqual(t, commonpb.ErrorCode_Success, resp.GetErrorCode())
+	})
+	t.Run("invalid dataCoord", func(t *testing.T) {
+		sched := newMockScheduler()
+		sched.AddTaskFunc = func(t task) error {
+			switch t.(type) {
+			case *markCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			case *createCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			case *dropCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			case *truncateCollectionTask:
+				return errors.New("mock error")
+			}
+			return errors.New("error mock AddTask")
+		}
+		c := newTestCore(withHealthyCode(), withScheduler(sched), withValidDataCoord(), withValidQueryCoord())
+		ctx := context.Background()
+		resp, err := c.TruncateCollection(ctx, &milvuspb.DropCollectionRequest{})
+		assert.NoError(t, err)
+		assert.NotEqual(t, commonpb.ErrorCode_Success, resp.GetErrorCode())
+	})
+	t.Run("invalid dataCoord", func(t *testing.T) {
+		sched := newMockScheduler()
+		sched.AddTaskFunc = func(t task) error {
+			switch t.(type) {
+			case *markCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			case *createCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			case *dropCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			case *truncateCollectionTask:
+				t.NotifyDone(errors.New("mock error"))
+				return nil
+			}
+			return errors.New("error mock AddTask")
+		}
+		c := newTestCore(withHealthyCode(), withScheduler(sched), withValidDataCoord(), withValidQueryCoord())
+		ctx := context.Background()
+		resp, err := c.TruncateCollection(ctx, &milvuspb.DropCollectionRequest{})
+		assert.NoError(t, err)
+		assert.NotEqual(t, commonpb.ErrorCode_Success, resp.GetErrorCode())
+	})
+	t.Run("invalid dataCoord", func(t *testing.T) {
+		sched := newMockScheduler()
+		sched.AddTaskFunc = func(t task) error {
+			switch t.(type) {
+			case *markCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			case *createCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			case *dropCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			case *truncateCollectionTask:
+				t.NotifyDone(nil)
+				return nil
+			}
+			return errors.New("error mock AddTask")
+		}
+		c := newTestCore(withHealthyCode(), withScheduler(sched), withValidDataCoord(), withValidQueryCoord())
+		ctx := context.Background()
+		resp, err := c.TruncateCollection(ctx, &milvuspb.DropCollectionRequest{})
+		assert.NoError(t, err)
+		assert.NotEqual(t, commonpb.ErrorCode_Success, resp.GetErrorCode())
+	})
 }
